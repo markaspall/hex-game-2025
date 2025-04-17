@@ -17,7 +17,8 @@ The world is built on a hex grid where each hexagon represents approximately 25c
 
 Each hexagon connects to its neighbors through a specialized geometry system:
 - Two triangles form a rectangular "skirt" that joins adjacent hexagon faces
-- A third triangle fills the remaining gap to the side
+- A third triangle (corner triangle) fills the remaining gap to the side
+- Precalculated vertex positions are stored in the hex data for efficient rendering
 - This approach prevents visual gaps while allowing for smooth elevation changes
 
 ![Hex Terrain Visualization](docs/hex_terrain.png)
@@ -63,10 +64,11 @@ When creating new biomes, the system:
 #### Custom Terrain Shader
 
 A specialized shader system handles:
-- Biome color blending at transitions
-- Height-based shading (higher elevations are lighter, lower are darker)
-- Feature overlays (like animated water for rivers)
-- Subtle texture variation to avoid flat colors
+- Triplanar texture mapping to prevent stretching on slopes
+- Texture atlas for efficient rendering of multiple biomes
+- Proper texture boundaries between different biome types
+- Single-sided rendering for performance optimization
+- Debug visualization options for development
 
 ## Technical Implementation
 
@@ -75,9 +77,10 @@ A specialized shader system handles:
 1. **ChunkManager** - Handles dynamic loading/unloading of chunks based on player position
 2. **AITerrainGenerator** - Interfaces with AI services to generate terrain descriptions
 3. **TerrainDataCompressor** - Encodes/decodes the bit-packed terrain format
-4. **HexGeometryGenerator** - Creates the specialized hexagon geometry with connecting triangles
-5. **ModelFactory** - Generates and caches 3D models for biomes
-6. **TerrainShader** - Implements the custom shader for terrain rendering
+4. **HexRenderer** - Creates and renders the specialized hexagon geometry with connecting triangles
+5. **HexGenerator** - Generates the base hex grid with proper vertex positions
+6. **TextureManager** - Manages texture loading and atlas creation for different biomes
+7. **TerrainShader** - Implements the custom shader for terrain rendering with triplanar mapping
 
 ### AI Integration
 

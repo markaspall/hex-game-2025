@@ -5,6 +5,8 @@
 
 import * as THREE from 'three';
 import HexGenerator from './hexGenerator.js';
+import TerrainShader from './TerrainShader.js';
+import TextureManager from './TextureManager.js';
 
 class HexRenderer {
     constructor(scene) {
@@ -20,7 +22,16 @@ class HexRenderer {
         ];
         
         // Flag to use debug colors instead of biome colors
-        this.useDebugColors = false;
+        this.useDebugColors = false; // Disabled to use biome-based colors
+        
+        // Flag to use terrain shader with triplanar texturing
+        this.useTerrainShader = false; // Disabled to use solid colors
+        
+        // Initialize terrain shader and texture manager
+        if (this.useTerrainShader) {
+            this.terrainShader = new TerrainShader();
+            this.textureManager = new TextureManager();
+        }
     }
 
     /**
@@ -39,7 +50,7 @@ class HexRenderer {
         return new THREE.MeshStandardMaterial({
             color: this.getRandomColor(),
             flatShading: true,
-            side: THREE.DoubleSide
+            side: THREE.FrontSide // Using single-sided rendering for better performance
         });
     }
     
@@ -60,7 +71,7 @@ class HexRenderer {
         return new THREE.MeshStandardMaterial({
             color: this.biomeColors[colorIndex],
             flatShading: true,
-            side: THREE.DoubleSide
+            side: THREE.FrontSide // Using single-sided rendering for better performance
         });
     }
 
@@ -72,6 +83,9 @@ class HexRenderer {
     createHexGeometry(hex, hexGrid) {
         const vertices = hex.vertices;
         const gridCoords = hex.gridCoords;
+        
+        // For texture indices
+        const textureIndices = [];
 
         const directions = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
 
@@ -123,6 +137,17 @@ class HexRenderer {
         positions.push(centerX, centerY, centerZ);
         normals.push(0, 1, 0); // Top face normal points up
         uvs.push(0.5, 0.5); // Center of UV
+        
+        // Add texture index for this vertex if using terrain shader
+        if (this.useTerrainShader) {
+            // Make sure we have a valid biome index
+            const biomeIndex = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+            // Use the atlas map if available, otherwise use the biome index directly
+            const textureIndex = this.biomeToAtlasMap ? 
+                (this.biomeToAtlasMap[biomeIndex] !== undefined ? this.biomeToAtlasMap[biomeIndex] : 0) : 
+                biomeIndex;
+            textureIndices.push(textureIndex);
+        }
 
         // Debug log initial state
         console.log(`Hex at ${gridCoords[0]},${gridCoords[1]} - Starting geometry creation`);
@@ -139,12 +164,23 @@ class HexRenderer {
             const u = 0.5 + 0.5 * Math.cos(angle);
             const v = 0.5 + 0.5 * Math.sin(angle);
             uvs.push(u, v);
+            
+            // Add texture index for this vertex if using terrain shader
+            if (this.useTerrainShader) {
+                // Make sure we have a valid biome index
+                const biomeIndex = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+                // Use the atlas map if available, otherwise use the biome index directly
+                const textureIndex = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex] !== undefined ? this.biomeToAtlasMap[biomeIndex] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex;
+                textureIndices.push(textureIndex);
+            }
 
-            // Create triangles with center point
+            // Create triangles with center point - counter-clockwise winding for front face visibility
             if (i < vertices.length - 1) {
-                indices.push(0, i + 1, i + 2);
+                indices.push(0, i + 2, i + 1); // Reversed order for correct winding
             } else {
-                indices.push(0, i + 1, 1);
+                indices.push(0, 1, i + 1); // Reversed order for correct winding
             }
         }
 
@@ -201,12 +237,49 @@ class HexRenderer {
                 nv1[0], nv1[1], nv1[2]
             );
 
+            // Original winding order for skirt triangles (already correct)
             indices.push(firstTriangleBaseIndex, firstTriangleBaseIndex + 1, firstTriangleBaseIndex + 2);
 
-            // Add normals and UVs for each vertex of the first triangle
-            for (let j = 0; j < 3; j++) {
-                normals.push(0, 0, -1); // Face normal points outward
-                uvs.push(0.5, 0.5); // Center of UV
+            // Add normals, UVs, and texture indices for each vertex of the first triangle
+            // First triangle vertices: v1, v2, nv1 (first two from current hex, third from neighbor)
+            
+            // First vertex (v1) from current hex
+            normals.push(0, 0, -1); // Face normal points outward
+            uvs.push(0.5, 0.5); // Center of UV
+            
+            if (this.useTerrainShader) {
+                // Use current hex's biome
+                const biomeIndex1 = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+                const textureIndex1 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex1] !== undefined ? this.biomeToAtlasMap[biomeIndex1] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex1;
+                textureIndices.push(textureIndex1);
+            }
+            
+            // Second vertex (v2) from current hex
+            normals.push(0, 0, -1);
+            uvs.push(0.5, 0.5);
+            
+            if (this.useTerrainShader) {
+                // Use current hex's biome
+                const biomeIndex2 = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+                const textureIndex2 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex2] !== undefined ? this.biomeToAtlasMap[biomeIndex2] : 0) : 
+                    biomeIndex2;
+                textureIndices.push(textureIndex2);
+            }
+            
+            // Third vertex (nv1) from neighbor hex
+            normals.push(0, 0, -1);
+            uvs.push(0.5, 0.5);
+            
+            if (this.useTerrainShader) {
+                // Use neighbor hex's biome if it exists, otherwise use default
+                const biomeIndex3 = neighbor && neighbor.biomeIndex !== undefined ? neighbor.biomeIndex : 0;
+                const textureIndex3 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex3] !== undefined ? this.biomeToAtlasMap[biomeIndex3] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex3;
+                textureIndices.push(textureIndex3);
             }
 
             // Create the second triangle of the skirt (v1, nv1, nv2)
@@ -218,12 +291,50 @@ class HexRenderer {
                 nv2[0], nv2[1], nv2[2]
             );
 
+            // Original winding order for skirt triangles (already correct)
             indices.push(secondTriangleBaseIndex, secondTriangleBaseIndex + 1, secondTriangleBaseIndex + 2);
 
-            // Add normals and UVs for each vertex of the second triangle
-            for (let j = 0; j < 3; j++) {
-                normals.push(0, 0, -1); // Face normal points outward
-                uvs.push(0.5, 0.5); // Center of UV
+            // Add normals, UVs, and texture indices for each vertex of the second triangle
+            // Second triangle vertices: v1, nv1, nv2 (first from current hex, other two from neighbor)
+            
+            // First vertex (v1) from current hex
+            normals.push(0, 0, -1); // Face normal points outward
+            uvs.push(0.5, 0.5); // Center of UV
+            
+            if (this.useTerrainShader) {
+                // Use current hex's biome
+                const biomeIndex1 = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+                const textureIndex1 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex1] !== undefined ? this.biomeToAtlasMap[biomeIndex1] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex1;
+                textureIndices.push(textureIndex1);
+            }
+            
+            // Second vertex (nv1) from neighbor hex
+            normals.push(0, 0, -1);
+            uvs.push(0.5, 0.5);
+            
+            if (this.useTerrainShader) {
+                // Use neighbor hex's biome if neighbor exists, otherwise use current hex's biome
+                const biomeIndex2 = neighbor && neighbor.biomeIndex !== undefined ? neighbor.biomeIndex : 
+                                   (hex.biomeIndex !== undefined ? hex.biomeIndex : 0);
+                const textureIndex2 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex2] !== undefined ? this.biomeToAtlasMap[biomeIndex2] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex2;
+                textureIndices.push(textureIndex2);
+            }
+            
+            // Third vertex (nv2) from neighbor hex
+            normals.push(0, 0, -1);
+            uvs.push(0.5, 0.5);
+            
+            if (this.useTerrainShader) {
+                // Use neighbor hex's biome if it exists, otherwise use default
+                const biomeIndex3 = neighbor && neighbor.biomeIndex !== undefined ? neighbor.biomeIndex : 0;
+                const textureIndex3 = this.biomeToAtlasMap ? 
+                    (this.biomeToAtlasMap[biomeIndex3] !== undefined ? this.biomeToAtlasMap[biomeIndex3] : this.textureManager.getDefaultTextureIndex()) : 
+                    biomeIndex3;
+                textureIndices.push(textureIndex3);
             }
 
             // Now create the corner triangle to fill the gap
@@ -262,12 +373,51 @@ class HexRenderer {
                         cwv2[0], cwv2[1], cwv2[2]
                     );
 
-                    indices.push(cornerTriangleBaseIndex, cornerTriangleBaseIndex + 1, cornerTriangleBaseIndex + 2);
+                    // Counter-clockwise winding for front face visibility
+                    indices.push(cornerTriangleBaseIndex, cornerTriangleBaseIndex + 2, cornerTriangleBaseIndex + 1);
 
-                    // Add normals and UVs for each vertex of the corner triangle
-                    for (let j = 0; j < 3; j++) {
-                        normals.push(0, 1, 0); // Face normal points up like the hex top
-                        uvs.push(0.5, 0.5); // Center of UV
+                    // Add normals, UVs, and texture indices for each vertex of the corner triangle
+                    // Each vertex comes from a different hex, so we need to use the correct biome for each
+                    
+                    // First vertex (v2) is from the current hex
+                    normals.push(0, 1, 0); // Face normal points up like the hex top
+                    uvs.push(0.5, 0.5); // Center of UV
+                    
+                    if (this.useTerrainShader) {
+                        // Use current hex's biome
+                        const biomeIndex1 = hex.biomeIndex !== undefined ? hex.biomeIndex : 0;
+                        const textureIndex1 = this.biomeToAtlasMap ? 
+                            (this.biomeToAtlasMap[biomeIndex1] !== undefined ? this.biomeToAtlasMap[biomeIndex1] : 0) : 
+                            biomeIndex1;
+                        textureIndices.push(textureIndex1);
+                    }
+                    
+                    // Second vertex (nv1) is from the neighbor hex
+                    normals.push(0, 1, 0);
+                    uvs.push(0.5, 0.5);
+                    
+                    if (this.useTerrainShader) {
+                        // Use neighbor hex's biome if it exists, otherwise use current hex's biome
+                        const biomeIndex2 = neighbor && neighbor.biomeIndex !== undefined ? neighbor.biomeIndex : 
+                                           (hex.biomeIndex !== undefined ? hex.biomeIndex : 0);
+                        const textureIndex2 = this.biomeToAtlasMap ? 
+                            (this.biomeToAtlasMap[biomeIndex2] !== undefined ? this.biomeToAtlasMap[biomeIndex2] : this.textureManager.getDefaultTextureIndex()) : 
+                            biomeIndex2;
+                        textureIndices.push(textureIndex2);
+                    }
+                    
+                    // Third vertex (cwv2) is from the clockwise neighbor hex
+                    normals.push(0, 1, 0);
+                    uvs.push(0.5, 0.5);
+                    
+                    if (this.useTerrainShader) {
+                        // Use clockwise neighbor hex's biome if it exists, otherwise use current hex's biome
+                        const biomeIndex3 = cwNeighbor && cwNeighbor.biomeIndex !== undefined ? cwNeighbor.biomeIndex : 
+                                           (hex.biomeIndex !== undefined ? hex.biomeIndex : 0);
+                        const textureIndex3 = this.biomeToAtlasMap ? 
+                            (this.biomeToAtlasMap[biomeIndex3] !== undefined ? this.biomeToAtlasMap[biomeIndex3] : this.textureManager.getDefaultTextureIndex()) : 
+                            biomeIndex3;
+                        textureIndices.push(textureIndex3);
                     }
 
                     console.log(`Added corner triangle successfully`);
@@ -275,178 +425,11 @@ class HexRenderer {
             }
         }
 
-        // Final debug log
-        console.log(`Final geometry - positions: ${positions.length / 3}, indices: ${indices.length}, normals: ${normals.length / 3}, uvs: ${uvs.length / 2}`);
+        // Debug log final state
+        console.log(`Final geometry - positions: ${positions.length / 3}, indices: ${indices.length / 3}, normals: ${normals.length / 3}, uvs: ${uvs.length / 2}, textureIndices: ${textureIndices.length}`);
 
-        return { positions, indices, normals, uvs };
+        return { positions, indices, normals, uvs, textureIndices };
     }
-
-    // /**
-    //  * Create a hex face geometry from vertices
-    //  * @param {Array} vertices - Array of vertex coordinates
-    //  * @returns {Array} Array containing positions, indices, and normals
-    //  */
-    // createHexGeometry(hex, hexGrid) {
-
-    //     const vertices = hex.vertices;
-    //     const gridCoords = hex.gridCoords;
-
-    //     const directions = ['N', 'NE', 'SE', 'S', 'SW', 'NW'];
-
-    //     // we need an instance of hexGenerator
-    //     const hexGenerator = new HexGenerator();
-
-    //     // For flat top hex, the center point is the average of all vertices
-    //     const centerX = vertices.reduce((sum, v) => sum + v[0], 0) / vertices.length;
-    //     const centerY = vertices[0][1]; // All vertices have the same elevation
-    //     const centerZ = vertices.reduce((sum, v) => sum + v[2], 0) / vertices.length;
-
-    //     // Create arrays for the top face (the hex face itself)
-    //     const positions = [];
-    //     const indices = [];
-    //     const normals = [];
-    //     const uvs = [];
-
-    //     // Add center point first
-    //     positions.push(centerX, centerY, centerZ);
-    //     normals.push(0, 1, 0); // Top face normal points up
-    //     uvs.push(0.5, 0.5); // Center of UV
-
-    //     // Debug log initial state
-    //     console.log(`Hex at ${gridCoords[0]},${gridCoords[1]} - Starting geometry creation`);
-    //     console.log(`Initial positions: ${positions.length / 3}, indices: ${indices.length / 3}, normals: ${normals.length / 3}`);
-
-    //     // Add vertices
-    //     for (let i = 0; i < vertices.length; i++) {
-    //         const vertex = vertices[i];
-    //         positions.push(vertex[0], vertex[1], vertex[2]);
-    //         normals.push(0, 1, 0); // Top face normal points up
-
-    //         // Calculate UV coordinates (map the hex to a circle)
-    //         const angle = (Math.PI / 3) * i;
-    //         const u = 0.5 + 0.5 * Math.cos(angle);
-    //         const v = 0.5 + 0.5 * Math.sin(angle);
-    //         uvs.push(u, v);
-
-    //         // Create triangles with center point
-    //         if (i < vertices.length - 1) {
-    //             indices.push(0, i + 1, i + 2);
-    //         } else {
-    //             indices.push(0, i + 1, 1);
-    //         }
-
-    //         // Debug log after adding the hex triangle
-    //         console.log(`After adding hex triangle ${i} with direction ${directions[i]}: positions: ${positions.length / 3}, indices: ${indices.length / 3}, normals: ${normals.length / 3}`);
-
-    //         // We only need skirts for these directions.
-    //         if (directions[i] != 'SE' &&
-    //             directions[i] != 'S' &&
-    //             directions[i] != 'SW') {
-    //             continue;
-    //         }
-
-    //         // Debug log - considering a skirt for this direction
-    //         console.log(`Considering skirt for direction ${directions[i]}`);
-
-    //         const thisHex = hexGrid.find(h => h.gridCoords[0] === gridCoords[0] && h.gridCoords[1] === gridCoords[1]);
-
-    //         // Get the neighbor hex
-    //         const neighbor = hexGenerator.getNeighbor(thisHex, directions[i], hexGrid);
-    //         if (!neighbor) {
-    //             console.log(`No neighbor found in direction ${directions[i]} for hex ${gridCoords[0]},${gridCoords[1]}. So no skirt`);
-    //             continue;
-    //         }
-    //         console.log(`Neighbor found in direction ${directions[i]} for hex ${gridCoords[0]},${gridCoords[1]}. So adding skirt`);
-
-    //         // Get the neighbor hex vertices on it's opposite named edge to the one we are on 
-    //         // So if we are on the S of this hex, we need the N of the neighbor
-    //         const neighborVertices = neighbor.vertices;
-
-    //         // Determine the opposite direction
-    //         let neighborDirection;
-    //         switch (directions[i]) {
-    //             case 'N': neighborDirection = 'S'; break;
-    //             case 'NE': neighborDirection = 'SW'; break;
-    //             case 'SE': neighborDirection = 'NW'; break;
-    //             case 'S': neighborDirection = 'N'; break;
-    //             case 'SW': neighborDirection = 'NE'; break;
-    //             case 'NW': neighborDirection = 'SE'; break;
-    //         }
-
-    //         console.log(`Creating skirt for edge ${directions[i]} (opposite: ${neighborDirection}) between hex ${gridCoords[0]},${gridCoords[1]} and ${neighbor.gridCoords[0]},${neighbor.gridCoords[1]}`);
-
-    //         // Get the current vertex and the next vertex (for the edge)
-    //         const currentVertex = vertices[i];
-    //         const nextVertexIndex = (i + 1) % vertices.length;
-    //         const nextVertex = vertices[nextVertexIndex];
-
-    //         // Find the corresponding vertices on the neighbor hex
-    //         // We need to find the two vertices that form the opposite edge
-    //         const dirIndex = directions.indexOf(neighborDirection);
-    //         if (dirIndex === -1) {
-    //             console.error(`Invalid neighbor direction: ${neighborDirection}`);
-    //             continue;
-    //         }
-
-    //         const neighborVertex1 = neighborVertices[dirIndex];
-    //         const neighborVertex2 = neighborVertices[(dirIndex + 1) % neighborVertices.length];
-
-    //         // Debug log vertex positions
-    //         console.log(`Current vertex: [${currentVertex}], Next vertex: [${nextVertex}]`);
-    //         console.log(`Neighbor vertex 1: [${neighborVertex1}], Neighbor vertex 2: [${neighborVertex2}]`);
-
-    //         // Create the first triangle of the skirt (current vertex, next vertex, neighbor vertex 1)
-    //         // Get the current index (positions array contains x,y,z values, so divide by 3 to get vertex count)
-    //         const firstTriangleBaseIndex = positions.length / 3;
-
-    //         // Debug log before adding the first triangle
-    //         console.log(`Before first triangle: positions: ${positions.length / 3}, indices: ${indices.length / 3}, normals: ${normals.length / 3}`);
-
-    //         // Add vertices for the first triangle
-    //         positions.push(
-    //             currentVertex[0], currentVertex[1], currentVertex[2],
-    //             nextVertex[0], nextVertex[1], nextVertex[2],
-    //             neighborVertex1[0], neighborVertex1[1], neighborVertex1[2]
-    //         );
-
-    //         // Add indices for the first triangle
-    //         // Since we just added 3 vertices (9 values), their indices are firstTriangleBaseIndex, +1, and +2
-    //         indices.push(firstTriangleBaseIndex, firstTriangleBaseIndex + 1, firstTriangleBaseIndex + 2);
-
-    //         // Add normals and UVs for each vertex of the first triangle
-    //         for (let j = 0; j < 3; j++) {
-    //             normals.push(0, -1, 0); // Bottom face normal points down
-    //             uvs.push(0.5, 0.5); // Center of UV
-    //         }
-
-    //         // Debug log after adding the first triangle
-    //         console.log(`After first triangle: positions: ${positions.length / 3}, indices: ${indices.length / 3}, normals: ${normals.length / 3}`);
-
-    //         // // Create the second triangle of the skirt (next vertex, neighbor vertex 2, neighbor vertex 1)
-    //         // // Get the current index for the second triangle
-    //         // const secondTriangleBaseIndex = positions.length / 3;
-
-    //         // positions.push(
-    //         //     nextVertex[0], nextVertex[1], nextVertex[2],
-    //         //     neighborVertex2[0], neighborVertex2[1], neighborVertex2[2],
-    //         //     neighborVertex1[0], neighborVertex1[1], neighborVertex1[2]
-    //         // );
-
-    //         // // Add indices for the second triangle
-    //         // indices.push(secondTriangleBaseIndex, secondTriangleBaseIndex + 1, secondTriangleBaseIndex + 2);
-
-    //         // // Add normals and UVs for each vertex of the second triangle
-    //         // for (let j = 0; j < 3; j++) {
-    //         //     normals.push(0, -1, 0); // Bottom face normal points down
-    //         //     uvs.push(0.5, 0.5); // Center of UV
-    //         // }
-    //     }
-
-    //     // Final debug log
-    //     console.log(`Final geometry - positions: ${positions.length / 3}, indices: ${indices.length}, normals: ${normals.length / 3}, uvs: ${uvs.length / 2}`);
-
-    //     return { positions, indices, normals, uvs };
-    // }
 
     /**
      * Render the hex grid
@@ -456,6 +439,38 @@ class HexRenderer {
     renderGrid(hexGrid) {
         // Create a group to hold all hex meshes
         const group = new THREE.Group();
+        
+        // If using terrain shader, prepare the texture atlas
+        if (this.useTerrainShader) {
+            // Get unique biome indices in this chunk
+            const uniqueBiomeIndices = [...new Set(hexGrid.map(hex => hex.biomeIndex))];
+            console.log('Unique biome indices in chunk:', uniqueBiomeIndices);
+            
+            // Create mapping from biome index to atlas index
+            this.biomeToAtlasMap = this.textureManager.createBiomeToAtlasMap(uniqueBiomeIndices);
+            console.log('Biome to atlas map:', this.biomeToAtlasMap);
+            
+            // Load textures and create atlas
+            this.textureManager.loadTextures(uniqueBiomeIndices)
+                .then(textures => {
+                    // Create texture atlas
+                    const atlas = this.terrainShader.createTextureAtlas(textures);
+                    
+                    // Update shader parameters
+                    this.terrainShader.updateParams({
+                        textureAtlas: atlas,
+                        textureCount: uniqueBiomeIndices.length,
+                        useDebugColors: this.useDebugColors
+                    });
+                    
+                    console.log('Texture atlas created with', uniqueBiomeIndices.length, 'textures');
+                })
+                .catch(error => {
+                    console.error('Failed to load textures:', error);
+                    // Fall back to debug colors if texture loading fails
+                    this.terrainShader.updateParams({ useDebugColors: true });
+                });
+        }
 
         // Create mesh for each hex
         hexGrid.forEach(hex => {
@@ -480,20 +495,34 @@ class HexRenderer {
         const geometry = new THREE.BufferGeometry();
 
         // Get face data
-        const { positions, indices, normals, uvs } = this.createHexGeometry(hex, hexGrid);
+        const { positions, indices, normals, uvs, textureIndices } = this.createHexGeometry(hex, hexGrid);
         console.log('number of positions', positions.length);
         console.log('number of indices', indices.length);
         console.log('number of normals', normals.length);
         console.log('number of uvs', uvs.length);
+        if (this.useTerrainShader) {
+            console.log('number of textureIndices', textureIndices.length);
+        }
 
         // Set geometry attributes
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
         geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        
+        // Add texture indices as an attribute if using terrain shader
+        if (this.useTerrainShader) {
+            geometry.setAttribute('textureIndex', new THREE.Float32BufferAttribute(textureIndices, 1));
+        }
+        
         geometry.setIndex(indices);
 
-        // Create mesh
-        const mesh = new THREE.Mesh(geometry, material);
+        // Create mesh with appropriate material
+        let meshMaterial = material;
+        if (this.useTerrainShader) {
+            meshMaterial = this.terrainShader.getMaterial();
+        }
+        
+        const mesh = new THREE.Mesh(geometry, meshMaterial);
         mesh.userData = {
             gridCoords: hex.gridCoords,
             elevation: hex.elevation,
