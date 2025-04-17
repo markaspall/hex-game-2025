@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <%- include('partials/head') %>
+    <title><%= title %> - Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .game-ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-ui">
+        <div>Grid Size: <%= gridSize %></div>
+        <div>Hex Size: <%= hexSize %></div>
+        <div>Hex Gap: <%= hexGap %></div>
+    </div>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "/node_modules/three/build/three.module.js",
+                "three/examples/jsm/controls/OrbitControls.js": "/node_modules/three/examples/jsm/controls/OrbitControls.js"
+            }
+        }
+    </script>
+    
+    <script type="module">
+        // Set game parameters from server
+        window.gameParams = {
+            gridSize: <%= gridSize %>,
+            hexSize: <%= hexSize %>,
+            hexGap: <%= hexGap %>
+        };
+        
+        // Import the main app
+        import '/js/app.js';
+    </script>
+</body>
+</html>
