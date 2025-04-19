@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import HexGenerator from './hex/hexGenerator.js';
-import HexRenderer from './hex/hexRenderer.js';
+// import HexRenderer from './hex/hexRenderer.js';
 // import HexDebugger from './hex/hexDebugger.js';
 
 class HexGame {
@@ -18,35 +18,35 @@ class HexGame {
             hexGap: 0.1,
             debugMode: false
         };
-        
+
         // FPS tracking variables
         this.fps = 0;
         this.frameCount = 0;
         this.lastTime = performance.now();
         this.fpsUpdateInterval = 500; // Update FPS every 500ms
-        
+
         // Parse URL parameters
         this.parseUrlParams();
-        
+
         // Set up the scene
         this.setupScene();
-        
+
         // Set up event listeners
         window.addEventListener('resize', this.onWindowResize.bind(this));
-        
+
         // Create UI controls
         this.createUI();
-        
+
         // Initialize
         this.init();
     }
-    
+
     /**
      * Parse URL parameters and update game settings
      */
     parseUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
-        
+
         // Parse gridSize parameter
         if (urlParams.has('gridSize')) {
             const gridSize = parseInt(urlParams.get('gridSize'));
@@ -55,7 +55,7 @@ class HexGame {
                 console.log(`Setting gridSize from URL: ${gridSize}`);
             }
         }
-        
+
         // Parse hexSize parameter
         if (urlParams.has('hexSize')) {
             const hexSize = parseFloat(urlParams.get('hexSize'));
@@ -64,7 +64,7 @@ class HexGame {
                 console.log(`Setting hexSize from URL: ${hexSize}`);
             }
         }
-        
+
         // Parse hexGap parameter
         if (urlParams.has('hexGap')) {
             const hexGap = parseFloat(urlParams.get('hexGap'));
@@ -73,19 +73,8 @@ class HexGame {
                 console.log(`Setting hexGap from URL: ${hexGap}`);
             }
         }
-        
-        // // Parse debug parameter
-        // if (urlParams.has('debug')) {
-        //     const debug = urlParams.get('debug').toLowerCase() === 'true';
-        //     this.params.debugMode = debug;
-        //     console.log(`Setting debugMode from URL: ${debug}`);
-        // } else {
-        //     // Explicitly ensure debugMode is false by default
-        //     this.params.debugMode = false;
-        //     console.log('Debug mode explicitly set to false by default');
-        // }
     }
-    
+
     /**
      * Create UI controls for the application
      */
@@ -97,20 +86,7 @@ class HexGame {
         uiContainer.style.left = '10px';
         uiContainer.style.zIndex = '100';
         document.body.appendChild(uiContainer);
-        
-        // // Create debug mode toggle button
-        // const debugButton = document.createElement('button');
-        // debugButton.textContent = 'Toggle Debug Mode';
-        // debugButton.style.padding = '8px 16px';
-        // debugButton.style.backgroundColor = '#4CAF50';
-        // debugButton.style.color = 'white';
-        // debugButton.style.border = 'none';
-        // debugButton.style.borderRadius = '4px';
-        // debugButton.style.cursor = 'pointer';
-        // debugButton.style.marginRight = '10px';
-        // debugButton.addEventListener('click', () => this.toggleDebugMode());
-        // uiContainer.appendChild(debugButton);
-        
+
         // Create info display panel
         this.infoPanel = document.createElement('div');
         this.infoPanel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
@@ -125,7 +101,7 @@ class HexGame {
         this.updateInfoPanel();
         uiContainer.appendChild(this.infoPanel);
     }
-    
+
     /**
      * Update the information panel with current stats
      */
@@ -147,26 +123,26 @@ class HexGame {
         // Create scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x87CEEB); // Sky blue background
-        
+
         // Create camera
         this.camera = new THREE.PerspectiveCamera(
             75, window.innerWidth / window.innerHeight, 0.1, 1000
         );
         this.camera.position.set(0, 20, 20);
         this.camera.lookAt(0, 0, 0);
-        
+
         // Create renderer
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
         this.renderer.shadowMap.enabled = true;
         document.body.appendChild(this.renderer.domElement);
-        
+
         // Add lighting
         // Ambient light
         const ambientLight = new THREE.AmbientLight(0x404040, 1);
         this.scene.add(ambientLight);
-        
+
         // Directional light (sun)
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(10, 20, 10);
@@ -174,12 +150,12 @@ class HexGame {
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         this.scene.add(directionalLight);
-        
+
         // Add orbit controls for camera
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
-        
+
         // Add grid helper for reference
         const gridHelper = new THREE.GridHelper(50, 50);
         this.scene.add(gridHelper);
@@ -190,39 +166,24 @@ class HexGame {
      */
     async init() {
         try {
-            // Load terrain data
-            const response = await fetch('/assets/terrainData/chunk_0_0.json');
-            const terrainData = await response.json();
-            
             // Create hex generator and renderer
             this.hexGenerator = new HexGenerator(
                 this.params.gridSize,
                 this.params.hexSize,
                 this.params.hexGap
             );
-            this.hexRenderer = new HexRenderer(this.scene);
-            
-            // Parse elevation data and generate grid
-            const elevationData = this.hexGenerator.parseElevationData(terrainData);
-            this.hexGrid = this.hexGenerator.generateGrid(elevationData);
-            
-            // Render the grid
-            this.hexMeshGroup = this.hexRenderer.renderGrid(this.hexGrid);
-            
+
+            // Render the scene - now using async method
+            const meshes = await this.hexGenerator.renderGrid(this.scene);
+            this.hexMeshes = meshes;
+            console.log('Hex grid generated successfully with', meshes.length, 'hexes');
+
             // Center camera on the grid
             const gridCenter = this.calculateGridCenter();
             this.controls.target.set(gridCenter.x, 0, gridCenter.z);
             this.camera.position.set(gridCenter.x, 20, gridCenter.z + 20);
             this.controls.update();
-            
-            // // Initialize the hex debugger
-            // this.hexDebugger = new HexDebugger(this.scene, this.hexGrid, this.hexRenderer, this.camera);
-            
-            // // If debug mode is enabled, show debug visualizations
-            // if (this.params.debugMode) {
-            //     this.hexDebugger.addDebugVisualizations();
-            // }
-            
+                
             // Start animation loop
             this.animate();
         } catch (error) {
@@ -235,22 +196,24 @@ class HexGame {
      * @returns {THREE.Vector3} Center point coordinates
      */
     calculateGridCenter() {
-        if (!this.hexGrid || this.hexGrid.length === 0) {
-            return new THREE.Vector3();
-        }
-        
-        // Get grid extents
-        const minX = Math.min(...this.hexGrid.map(hex => hex.position[0]));
-        const maxX = Math.max(...this.hexGrid.map(hex => hex.position[0]));
-        const minZ = Math.min(...this.hexGrid.map(hex => hex.position[2]));
-        const maxZ = Math.max(...this.hexGrid.map(hex => hex.position[2]));
-        
-        // Calculate center
-        return new THREE.Vector3(
-            minX + (maxX - minX) / 2,
-            0,
-            minZ + (maxZ - minZ) / 2
-        );
+        // if (!this.hexGrid || this.hexGrid.length === 0) {
+        //     return new THREE.Vector3();
+        // }
+
+        // // Get grid extents
+        // const minX = Math.min(...this.hexGrid.map(hex => hex.position[0]));
+        // const maxX = Math.max(...this.hexGrid.map(hex => hex.position[0]));
+        // const minZ = Math.min(...this.hexGrid.map(hex => hex.position[2]));
+        // const maxZ = Math.max(...this.hexGrid.map(hex => hex.position[2]));
+
+        // // Calculate center
+        // return new THREE.Vector3(
+        //     minX + (maxX - minX) / 2,
+        //     0,
+        //     minZ + (maxZ - minZ) / 2
+        // );
+
+        return new THREE.Vector3(0, 0, 0);
     }
 
     /**
@@ -258,23 +221,23 @@ class HexGame {
      */
     animate() {
         requestAnimationFrame(this.animate.bind(this));
-        
+
         // Update controls
         this.controls.update();
-        
+
         // Render the scene
         this.renderer.render(this.scene, this.camera);
-        
+
         // Calculate FPS
         this.frameCount++;
         const currentTime = performance.now();
         const elapsedTime = currentTime - this.lastTime;
-        
+
         if (elapsedTime >= this.fpsUpdateInterval) {
             this.fps = (this.frameCount * 1000) / elapsedTime;
             this.frameCount = 0;
             this.lastTime = currentTime;
-            
+
             // Update the info panel with current FPS and other stats
             this.updateInfoPanel();
         }
@@ -287,7 +250,7 @@ class HexGame {
         // Update camera aspect ratio
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
-        
+
         // Update renderer size
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
@@ -296,54 +259,32 @@ class HexGame {
      * Update hex grid parameters and regenerate
      * @param {Object} params - New parameters
      */
-    updateGrid(params) {
+    async updateGrid(params) {
         // Update parameters
         this.params = { ...this.params, ...params };
-        
+
         // Clear old grid and debug visualizations
-        if (this.hexMeshGroup) {
-            this.scene.remove(this.hexMeshGroup);
-            this.hexRenderer.clear();
+        if (this.hexMeshes) {
+            // Remove each mesh from the scene
+            this.hexMeshes.forEach(mesh => this.scene.remove(mesh));
         }
-        
-        // if (this.hexDebugger) {
-        //     this.hexDebugger.clear();
-        // }
-        
+
         // Create new hex generator with updated parameters
         this.hexGenerator = new HexGenerator(
             this.params.gridSize,
             this.params.hexSize,
             this.params.hexGap
         );
-        
-        // Regenerate grid
-        this.hexGrid = this.hexGenerator.generateGrid(this.elevationData);
-        this.hexMeshGroup = this.hexRenderer.renderGrid(this.hexGrid);
-        
-        // // Reinitialize the hex debugger
-        // this.hexDebugger = new HexDebugger(this.scene, this.hexGrid, this.hexRenderer, this.camera);
-        
-        // // If debug mode is enabled, show debug visualizations
-        // if (this.params.debugMode) {
-        //     this.hexDebugger.addDebugVisualizations();
-        // }
+
+        try {
+            // Regenerate grid
+            const meshes = await this.hexGenerator.generateHexGrid(this.scene);
+            this.hexMeshes = meshes;
+            console.log('Hex grid updated successfully with', meshes.length, 'hexes');
+        } catch (error) {
+            console.error('Error updating hex grid:', error);
+        }
     }
-    
-    /**
-     * Toggle debug mode on/off
-     */
-    // toggleDebugMode() {
-    //     this.params.debugMode = !this.params.debugMode;
-        
-    //     if (this.params.debugMode) {
-    //         console.log('Debug mode enabled');
-    //         this.hexDebugger.addDebugVisualizations();
-    //     } else {
-    //         console.log('Debug mode disabled');
-    //         this.hexDebugger.clear();
-    //     }
-    // }
 }
 
 // Initialize when DOM is ready
